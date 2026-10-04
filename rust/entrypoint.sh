@@ -98,6 +98,12 @@ if [ "$FRAMEWORK" = "carbon" ]; then
   source carbon/tools/environment.sh
 fi
 
+# Docker closes a container's stdin once the first attached client leaves. Mono then hands
+# file descriptor 0 to the next file it opens and aborts with "duplicate File fd 0", which
+# Carbon triggers as soon as it writes a file. The server never reads stdin (the console is
+# WebRCON), so keep descriptor 0 pointing at /dev/null.
+exec 0</dev/null
+
 echo "[clouder] starting Rust"
 exec ./RustDedicated -batchmode -nographics \
   +server.identity "$IDENTITY" \
