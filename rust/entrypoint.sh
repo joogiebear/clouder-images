@@ -20,6 +20,11 @@ set -euo pipefail
 : "${UPDATE_ON_START:=1}"
 : "${STEAM_BRANCH:=public}"
 : "${RUST_PLUS:=false}"
+# vanilla runs the game as Valve ships it. carbon adds the Carbon plugin framework
+# (https://github.com/CarbonCommunity/Carbon), which loads .cs plugins from server/carbon/plugins.
+: "${FRAMEWORK:=vanilla}"
+# Carbon publishes one build per Rust branch; production_build matches the public branch.
+: "${CARBON_BUILD:=production_build}"
 
 export HOME=/data
 cd /data
@@ -48,6 +53,34 @@ if [ ! -x server/RustDedicated ] || [ "$UPDATE_ON_START" = "1" ]; then
 fi
 [ -x server/RustDedicated ] || { echo "[clouder] RustDedicated is missing after install" >&2; exit 1; }
 
+install_carbon() {
+  local url="https://github.com/CarbonCommunity/Carbon/releases/download/${CARBON_BUILD}/Carbon.Linux.Release.tar.gz"
+  local tmp
+  tmp=$(mktemp /data/carbon-XXXXXX.tar.gz)
+  for attempt in 1 2 3; do
+    echo "[clouder] downloading Carbon (attempt $attempt)"
+    # Download to a file first, so a failed download never leaves half a framework behind.
+    if curl -fsSL -o "$tmp" "$url" && tar -tzf "$tmp" >/dev/null 2>&1; then
+      tar -xzf "$tmp" -C /data/server
+      rm -f "$tmp"
+      return 0
+    fi
+    sleep 5
+  done
+  rm -f "$tmp"
+  return 1
+}
+
+if [ "$FRAMEWORK" = "carbon" ]; then
+  if [ ! -f server/carbon/tools/environment.sh ] || [ "$UPDATE_ON_START" = "1" ]; then
+    if ! install_carbon; then
+      # An installed copy is better than none, but a server that never had Carbon cannot start with it.
+      [ -f server/carbon/tools/environment.sh ] || { echo "[clouder] could not download Carbon" >&2; exit 1; }
+      echo "[clouder] could not update Carbon; using the installed copy" >&2
+    fi
+  fi
+fi
+
 # Rust+ makes the server test a connection to its own public address. Behind a router that
 # does not allow that, the game runtime aborts, so Rust+ is off unless explicitly enabled.
 if [ "$RUST_PLUS" = "true" ]; then
@@ -58,6 +91,12 @@ fi
 
 cd server
 export LD_LIBRARY_PATH="$PWD/RustDedicated_Data/Plugins/x86_64:${LD_LIBRARY_PATH:-}"
+
+if [ "$FRAMEWORK" = "carbon" ]; then
+  echo "[clouder] Carbon is on"
+  # shellcheck disable=SC1091
+  source carbon/tools/environment.sh
+fi
 
 echo "[clouder] starting Rust"
 exec ./RustDedicated -batchmode -nographics \
