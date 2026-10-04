@@ -98,12 +98,12 @@ if [ "$FRAMEWORK" = "carbon" ]; then
   source carbon/tools/environment.sh
 fi
 
-# The game's console reader closes file descriptor 0 when stdin reaches end of file, which
-# happens when Docker closes the container's stdin after the first attached client leaves.
-# Mono then hands descriptor 0 to the next file or socket it opens and aborts with
-# "duplicate File fd 0", which Carbon triggers as soon as it writes a file. The server never
-# needs input (the console is WebRCON), so give it a stdin that stays open and silent.
-exec 0< <(exec sleep infinity)
+# The game's Epic Online Services library closes file descriptor 0, after which Mono hands
+# that number to the next file or socket it opens and aborts ("duplicate File fd 0"). Carbon and
+# Rust+ both trigger it. keepstdin.so makes close(0) do nothing; see keepstdin.c. If Docker
+# started the container with no stdin at all, give it /dev/null so descriptor 0 is taken.
+[ -e /proc/self/fd/0 ] || exec 0</dev/null
+export LD_PRELOAD="/usr/local/lib/keepstdin.so${LD_PRELOAD:+:$LD_PRELOAD}"
 
 echo "[clouder] starting Rust"
 exec ./RustDedicated -batchmode -nographics \
