@@ -22,9 +22,18 @@ set -euo pipefail
 : "${RUST_PLUS:=false}"
 # vanilla runs the game as Valve ships it. carbon adds the Carbon plugin framework
 # (https://github.com/CarbonCommunity/Carbon), which loads .cs plugins from server/carbon/plugins.
+# oxide adds the uMod Oxide framework (https://github.com/OxideMod/Oxide.Rust), which loads .cs
+# plugins from server/oxide/plugins.
 : "${FRAMEWORK:=vanilla}"
 # Carbon publishes one build per Rust branch; production_build matches the public branch.
 : "${CARBON_BUILD:=production_build}"
+# Oxide release tag, or "latest" for the newest release.
+: "${OXIDE_BUILD:=latest}"
+
+case "$FRAMEWORK" in
+  vanilla|carbon|oxide) ;;
+  *) echo "[clouder] unknown FRAMEWORK '$FRAMEWORK' (use vanilla, carbon or oxide)" >&2; exit 1 ;;
+esac
 
 export HOME=/data
 cd /data
@@ -36,11 +45,15 @@ if [ ! -x steamcmd/steamcmd.sh ]; then
 fi
 
 install_game() {
+  # An optional first argument "validate" makes SteamCMD check every file and restore the ones
+  # that differ from Valve's copy.
+  local validate=()
+  [ "${1:-}" = "validate" ] && validate=(validate)
   # SteamCMD fails now and then for network reasons, so retry a few times.
   for attempt in 1 2 3; do
     echo "[clouder] downloading or updating Rust (attempt $attempt)"
     if steamcmd/steamcmd.sh +force_install_dir /data/server +login anonymous \
-        +app_update 258550 -beta "$STEAM_BRANCH" +quit; then
+        +app_update 258550 -beta "$STEAM_BRANCH" "${validate[@]}" +quit; then
       return 0
     fi
     sleep 5
@@ -48,7 +61,21 @@ install_game() {
   return 1
 }
 
-if [ ! -x server/RustDedicated ] || [ "$UPDATE_ON_START" = "1" ]; then
+# Oxide patches the game's own Assembly-CSharp.dll on disk, and a plain SteamCMD update does not
+# notice a file it did not change itself. So when a server leaves Oxide, the game is validated
+# once to put Valve's files back. /data/.framework remembers which framework the files are for.
+PREV_FRAMEWORK=$(cat /data/.framework 2>/dev/null || true)
+FORCE_VALIDATE=0
+if [ "$PREV_FRAMEWORK" = "oxide" ] && [ "$FRAMEWORK" != "oxide" ] && [ -x server/RustDedicated ]; then
+  echo "[clouder] leaving Oxide: validating the game files to restore the vanilla ones"
+  FORCE_VALIDATE=1
+fi
+
+if [ "$FORCE_VALIDATE" = "1" ]; then
+  install_game validate || { echo "[clouder] could not validate the Rust server" >&2; exit 1; }
+  # The Oxide libraries are not part of the game; remove them so nothing can load them.
+  rm -f server/RustDedicated_Data/Managed/Oxide.*
+elif [ ! -x server/RustDedicated ] || [ "$UPDATE_ON_START" = "1" ]; then
   install_game || { echo "[clouder] could not download the Rust server" >&2; exit 1; }
 fi
 [ -x server/RustDedicated ] || { echo "[clouder] RustDedicated is missing after install" >&2; exit 1; }
@@ -81,6 +108,46 @@ if [ "$FRAMEWORK" = "carbon" ]; then
   fi
 fi
 
+install_oxide() {
+  local base="https://github.com/OxideMod/Oxide.Rust/releases"
+  local url
+  if [ "$OXIDE_BUILD" = "latest" ]; then
+    url="$base/latest/download/Oxide.Rust-linux.zip"
+  else
+    url="$base/download/${OXIDE_BUILD}/Oxide.Rust-linux.zip"
+  fi
+  local tmp
+  tmp=$(mktemp /data/oxide-XXXXXX.zip)
+  for attempt in 1 2 3; do
+    echo "[clouder] downloading Oxide (attempt $attempt)"
+    # Download to a file first, so a failed download never leaves half a framework behind.
+    # The zip holds RustDedicated_Data/Managed/..., so it extracts straight over the server folder.
+    if curl -fsSL -o "$tmp" "$url" && unzip -tq "$tmp" >/dev/null 2>&1; then
+      # Record Oxide before touching the game files: if this is cut short, the next start
+      # still knows the files may be patched.
+      echo oxide > /data/.framework
+      unzip -qo "$tmp" -d /data/server
+      rm -f "$tmp"
+      return 0
+    fi
+    sleep 5
+  done
+  rm -f "$tmp"
+  return 1
+}
+
+if [ "$FRAMEWORK" = "oxide" ]; then
+  # Oxide.Core.dll is the marker of an installed Oxide. A game update restores Valve's
+  # Assembly-CSharp.dll, so Oxide is put back after every update, not only on first install.
+  if [ ! -f server/RustDedicated_Data/Managed/Oxide.Core.dll ] || [ "$UPDATE_ON_START" = "1" ]; then
+    if ! install_oxide; then
+      [ -f server/RustDedicated_Data/Managed/Oxide.Core.dll ] || { echo "[clouder] could not download Oxide" >&2; exit 1; }
+      echo "[clouder] could not update Oxide; using the installed copy" >&2
+    fi
+  fi
+fi
+echo "$FRAMEWORK" > /data/.framework
+
 # Rust+ makes the server test a connection to its own public address. Behind a router that
 # does not allow that, the game runtime aborts, so Rust+ is off unless explicitly enabled.
 if [ "$RUST_PLUS" = "true" ]; then
@@ -96,6 +163,10 @@ if [ "$FRAMEWORK" = "carbon" ]; then
   echo "[clouder] Carbon is on"
   # shellcheck disable=SC1091
   source carbon/tools/environment.sh
+fi
+
+if [ "$FRAMEWORK" = "oxide" ]; then
+  echo "[clouder] Oxide is on"
 fi
 
 # The game's Epic Online Services library closes file descriptor 0, after which Mono hands

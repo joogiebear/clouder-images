@@ -19,7 +19,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN dpkg --add-architecture i386 \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl lib32gcc-s1 lib32stdc++6 libsdl2-2.0-0 libstdc++6 tini \
+      ca-certificates curl lib32gcc-s1 lib32stdc++6 libsdl2-2.0-0 libstdc++6 tini unzip \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=shim /keepstdin.so /usr/local/lib/keepstdin.so
