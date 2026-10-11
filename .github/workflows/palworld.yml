@@ -1,0 +1,29 @@
+name: palworld
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "palworld/**"
+      - "test/palworld.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/palworld.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "palworld/**"
+      - "test/palworld.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/palworld.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: palworld
+      publish: ${{ github.event_name != 'pull_request' }}
