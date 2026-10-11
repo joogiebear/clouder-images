@@ -1,0 +1,29 @@
+name: projectzomboid
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "projectzomboid/**"
+      - "test/projectzomboid.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/projectzomboid.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "projectzomboid/**"
+      - "test/projectzomboid.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/projectzomboid.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: projectzomboid
+      publish: ${{ github.event_name != 'pull_request' }}
