@@ -69,7 +69,7 @@ ln -sf /data/steamcmd/linux64/steamclient.so "$HOME/.steam/sdk64/steamclient.so"
 args=(
   -dedicated -usercon -ip 0.0.0.0 -port "$SERVER_PORT" -maxplayers "$MAX_PLAYERS"
   +game_type "$game_type" +game_mode "$game_mode" +mapgroup mg_active +map "$MAP"
-  +hostname "$SERVER_NAME" +rcon_password "$RCON_PASSWORD" +sv_lan 0
+  +hostname "\"$SERVER_NAME\"" +rcon_password "$RCON_PASSWORD" +sv_lan 0
 )
 [ -z "$SERVER_PASSWORD" ] || args+=(+sv_password "$SERVER_PASSWORD")
 [ -z "$STEAM_TOKEN" ] || args+=(+sv_setsteamaccount "$STEAM_TOKEN")
