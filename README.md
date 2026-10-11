@@ -14,6 +14,10 @@ Container images that ClouderNode nodes run game servers in. They are public so 
 | `7dtd/` | `ghcr.io/joogiebear/clouder-7dtd` | SteamCMD and 7 Days to Die (about 18 GB) |
 | `factorio/` | `ghcr.io/joogiebear/clouder-factorio` | The Factorio headless server from factorio.com (about 0.2 GB) |
 | `ark/` | `ghcr.io/joogiebear/clouder-ark` | SteamCMD and ARK: Survival Evolved (about 15 GB) |
+| `bedrock/` | `ghcr.io/joogiebear/clouder-bedrock` | The Bedrock dedicated server from minecraft.net (about 0.1 GB) |
+| `dst/` | `ghcr.io/joogiebear/clouder-dst` | SteamCMD and Don't Starve Together (about 4 GB) |
+| `gmod/` | `ghcr.io/joogiebear/clouder-gmod` | SteamCMD, Garry's Mod and the Counter-Strike: Source content (about 9 GB) |
+| `vintagestory/` | `ghcr.io/joogiebear/clouder-vintagestory` | The Vintage Story server from vintagestory.at (about 0.1 GB) |
 
 ## How the images work
 
@@ -138,6 +142,68 @@ The server is downloaded from terraria.org into `/data/server/<version>` and `/d
 | `UPDATE_ON_START` | `1` | Update the game on every start |
 
 The variables above are written into `/data/Zomboid/Server/<SERVER_NAME>.ini` on every start; every other setting in the file is left as it is. The game reads its console from a pipe; `clouder-console <line>` writes a line to it, and a stop sends `quit`, which saves the world.
+
+## Minecraft Bedrock, Don't Starve Together, Garry's Mod and Vintage Story
+
+| Variable | Minecraft Bedrock | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, UDP; the IPv6 port is this number plus one | `19132` |
+| `SERVER_NAME`, `LEVEL_NAME`, `LEVEL_SEED` | Name in the server list, world folder name and seed (seed applies to new worlds) | `Bedrock Server`, `Bedrock level`, empty |
+| `GAMEMODE` | `survival`, `creative` or `adventure` | `survival` |
+| `DIFFICULTY` | `peaceful`, `easy`, `normal` or `hard` | `easy` |
+| `ALLOW_CHEATS` | | `false` |
+| `MAX_PLAYERS`, `VIEW_DISTANCE` | | `10`, `32` |
+| `ONLINE_MODE` | Require Xbox Live sign-in | `true` |
+| `ALLOW_LIST` | Only players in `allowlist.json` may join | `false` |
+| `BEDROCK_VERSION` | `latest` or a version such as `1.21.80.3` | `latest` |
+
+The server zip is downloaded from minecraft.net into `/data/server` and replaced whenever the wanted version differs from the installed one; worlds, `server.properties`, `allowlist.json` and `permissions.json` are kept. The variables above are written into `server.properties` on every start and every other line is left as it is. The server reads its console from a pipe; `clouder-console <line>` writes a line to it, and a stop sends `stop`, which saves the world.
+
+| Variable | Don't Starve Together | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, UDP | `10999` |
+| `CLUSTER_TOKEN` | Server token from accounts.klei.com; required, the entrypoint refuses to start without it | none |
+| `SERVER_NAME`, `SERVER_DESCRIPTION`, `SERVER_PASSWORD` | | `Dont Starve Together Server`, empty, empty |
+| `GAME_MODE` | `survival`, `endless` or `wilderness` | `survival` |
+| `MAX_PLAYERS` | | `6` |
+| `PVP` | | `false` |
+| `PAUSE_WHEN_EMPTY` | | `true` |
+| `ENABLE_CAVES` | Run a second shard with the caves inside the same container | `false` |
+| `WORKSHOP_MODS` | Comma separated workshop ids, downloaded and enabled on both shards | empty |
+| `CLUSTER_KEY` | Secret the two shards share; the panel generates it | `clouder` |
+| `UPDATE_ON_START`, `VALIDATE_ON_START` | | `1`, `0` |
+
+The cluster lives in `/data/DoNotStarveTogether/Cluster` and `cluster.ini`, both `server.ini` files and the token are written on every start. The master shard reads its console from a pipe; `clouder-console <line>` writes a Lua line to it (`c_save()`, `c_announce("hi")`), and a stop sends `c_shutdown(true)` to every shard, which saves the world. The caves shard listens on 127.0.0.1 only; players join through the master shard.
+
+| Variable | Garry's Mod | Default |
+| --- | --- | --- |
+| `RCON_PASSWORD` | required | none |
+| `SERVER_PORT` | Game port, UDP; RCON listens on the same number over TCP inside the container | `27015` |
+| `SERVER_NAME` | | `Garry's Mod Server` |
+| `GAMEMODE` | A gamemode folder name: `sandbox`, `terrortown`, or one from the workshop | `sandbox` |
+| `MAP` | | `gm_construct` |
+| `MAX_PLAYERS`, `TICKRATE` | | `16`, `66` |
+| `SERVER_PASSWORD` | Join password, empty for none | empty |
+| `STEAM_TOKEN` | Game server login token for app 4000; without one the server ranks lower in the browser | empty |
+| `WORKSHOP_COLLECTION`, `WORKSHOP_AUTHKEY` | Workshop collection id and a Steam Web API key; both are needed to load it | empty |
+| `MOUNT_CSS` | Download Counter-Strike: Source and mount it, which many maps need | `1` |
+| `STEAM_BRANCH`, `UPDATE_ON_START`, `VALIDATE_ON_START` | | `public`, `1`, `0` |
+
+The console is Source RCON through the `console` script, like Counter-Strike 2. The engine only writes its console output to the log when asked, so the entrypoint starts it with `-condebug` and relays `garrysmod/console.log` to the container's log, and it prints `Garry's Mod is accepting connections` once RCON answers.
+
+| Variable | Vintage Story | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, TCP and UDP | `42420` |
+| `SERVER_NAME`, `SERVER_DESCRIPTION`, `SERVER_PASSWORD` | Letters, numbers, spaces and `_ . ! # ( ) -` only | `Vintage Story Server`, empty, empty |
+| `MAX_PLAYERS` | | `16` |
+| `WORLD_SEED` | Applies to new worlds | empty |
+| `ADVERTISE` | List the server publicly | `false` |
+| `WHITELIST` | Only whitelisted players may join | `false` |
+| `ALLOW_PVP`, `PASS_TIME_WHEN_EMPTY` | | `true`, `false` |
+| `VS_VERSION` | `latest` (the current stable release) or a version such as `1.22.7` | `latest` |
+
+The server is downloaded from vintagestory.at into `/data/server` and replaced when the wanted version differs; the world, mods and `serverconfig.json` live in `/data/data`. The variables above are applied to `serverconfig.json` on every start with the server's own `--setconfig`, which leaves every other setting alone. Mods go in `/data/data/Mods`. The server runs on the .NET 10 runtime image, with roll-forward enabled so older releases that target .NET 8 also start. The server reads its console from a pipe; `clouder-console <line>` writes a line to it (commands start with `/`), and a stop sends `/stop`, which saves the world.
+
 ## Counter-Strike 2, 7 Days to Die, Factorio and ARK
 
 These four share a console. Each image has a `console` script that types one line into the game's own console from inside the container (Source RCON for Counter-Strike 2, Factorio and ARK, telnet for 7 Days to Die) and prints the answer to the container's log. The agent runs it with `docker exec <container> console "<line>"`, so the console ports are never published. The panel generates `RCON_PASSWORD`, and the entrypoint refuses to start without it.
@@ -202,7 +268,7 @@ Settings beyond these go in `server/ShooterGame/Saved/Config/LinuxServer/GameUse
 
 ## Stopping
 
-Rust is `exec`ed by its entrypoint, so the agent's RCON `quit`, or Docker's SIGTERM as the fallback, reaches the game directly. Satisfactory has no console. Its entrypoint turns SIGTERM into the interrupt the game saves and exits on, and a requested stop exits 0. Valheim and Palworld work the same way and have no console either. Terraria and Project Zomboid read their console from a pipe, so their entrypoints turn SIGTERM into the game's own save-and-exit command.
+Rust is `exec`ed by its entrypoint, so the agent's RCON `quit`, or Docker's SIGTERM as the fallback, reaches the game directly. Satisfactory has no console. Its entrypoint turns SIGTERM into the interrupt the game saves and exits on, and a requested stop exits 0. Valheim and Palworld work the same way and have no console either. Terraria, Project Zomboid, Minecraft Bedrock, Don't Starve Together and Vintage Story read their console from a pipe, so their entrypoints turn SIGTERM into the game's own save-and-exit command. Garry's Mod works like Counter-Strike 2.
 
 ## Publishing
 
