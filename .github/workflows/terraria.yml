@@ -1,0 +1,29 @@
+name: terraria
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraria/**"
+      - "test/terraria.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/terraria.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "terraria/**"
+      - "test/terraria.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/terraria.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: terraria
+      publish: ${{ github.event_name != 'pull_request' }}
