@@ -62,7 +62,7 @@ run --rm -e STUB_EXIT=1 -e RCON_PASSWORD=pw -e "SERVER_NAME=My Server" -e MAX_PL
   -e GAME_MODE=deathmatch -e STEAM_BRANCH=bogus! -e "SERVER_PASSWORD=bad pass" -e STEAM_TOKEN=ABC123 "$image" >/dev/null \
   || fail "the stubbed server did not start"
 
-grep -qx -- "My Server" "$work/args.txt" || fail "server name not passed through"
+grep -qx -- '"My Server"' "$work/args.txt" || fail "server name not passed through, quoted so the engine keeps the spaces"
 grep -qx -- "10" "$work/args.txt" || fail "invalid max players not replaced by the default"
 grep -qx -- "de_mirage" "$work/args.txt" || fail "map not passed through"
 grep -qx -- "-usercon" "$work/args.txt" || fail "RCON is not enabled"
