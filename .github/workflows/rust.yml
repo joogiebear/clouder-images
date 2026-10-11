@@ -1,0 +1,29 @@
+name: rust
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "rust/**"
+      - "test/rust.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/rust.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "rust/**"
+      - "test/rust.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/rust.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: rust
+      publish: ${{ github.event_name != 'pull_request' }}
