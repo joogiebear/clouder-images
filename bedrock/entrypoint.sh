@@ -107,6 +107,7 @@ setprop online-mode "$ONLINE_MODE"
 setprop allow-list "$ALLOW_LIST"
 setprop server-port "$SERVER_PORT"
 setprop server-portv6 "$((SERVER_PORT + 1))"
+setprop transport raknet
 
 fifo=/data/.console
 rm -f "$fifo"
