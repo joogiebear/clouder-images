@@ -1,0 +1,29 @@
+name: gmod
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "gmod/**"
+      - "test/gmod.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/gmod.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "gmod/**"
+      - "test/gmod.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/gmod.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: gmod
+      publish: ${{ github.event_name != 'pull_request' }}
