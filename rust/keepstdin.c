@@ -1,12 +1,6 @@
-// Keeps file descriptor 0 open.
-//
-// The Epic Online Services library inside the Rust server (EOS_Platform_Create) closes fd 0.
-// Mono, the game's runtime, still has it registered as stdin, so the next file or socket the
-// process opens is handed descriptor 0 and Mono aborts with "duplicate File fd 0" (or "Socket").
-// Carbon trips over it by writing a file at startup, and Rust+ by opening a socket.
-//
-// The server never reads stdin (the console is WebRCON), so ignoring close(0) is harmless.
-// Loaded with LD_PRELOAD by entrypoint.sh.
+// The Epic Online Services library in the Rust server closes fd 0. Mono still treats it as stdin
+// and hands the number to the next file or socket it opens, then aborts with "duplicate File fd 0".
+// The server never reads stdin, so ignoring close(0) is harmless. Loaded through LD_PRELOAD.
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <unistd.h>
