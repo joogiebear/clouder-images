@@ -1,0 +1,29 @@
+name: vintagestory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vintagestory/**"
+      - "test/vintagestory.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/vintagestory.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "vintagestory/**"
+      - "test/vintagestory.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/vintagestory.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: vintagestory
+      publish: ${{ github.event_name != 'pull_request' }}
