@@ -1,0 +1,29 @@
+name: ark
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ark/**"
+      - "test/ark.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/ark.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "ark/**"
+      - "test/ark.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/ark.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ark
+      publish: ${{ github.event_name != 'pull_request' }}

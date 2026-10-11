@@ -1,0 +1,7 @@
+#!/bin/sh
+[ $# -ge 1 ] || { echo "usage: console <command>" >&2; exit 64; }
+RCON_PASSWORD=${ADMIN_PASSWORD:-$RCON_PASSWORD}
+export RCON_PASSWORD
+out=$(rcon "${RCON_PORT:-27020}" "$*") || exit $?
+[ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/[rcon] /' >/proc/1/fd/1
+exit 0

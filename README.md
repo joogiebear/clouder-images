@@ -10,6 +10,10 @@ Container images that ClouderNode nodes run game servers in. They are public so 
 | `palworld/` | `ghcr.io/joogiebear/clouder-palworld` | SteamCMD and Palworld (about 5 GB) |
 | `terraria/` | `ghcr.io/joogiebear/clouder-terraria` | The Terraria server from terraria.org (about 45 MB) |
 | `projectzomboid/` | `ghcr.io/joogiebear/clouder-projectzomboid` | SteamCMD and Project Zomboid (about 7 GB) |
+| `cs2/` | `ghcr.io/joogiebear/clouder-cs2` | SteamCMD and Counter-Strike 2 (about 75 GB) |
+| `7dtd/` | `ghcr.io/joogiebear/clouder-7dtd` | SteamCMD and 7 Days to Die (about 18 GB) |
+| `factorio/` | `ghcr.io/joogiebear/clouder-factorio` | The Factorio headless server from factorio.com (about 0.2 GB) |
+| `ark/` | `ghcr.io/joogiebear/clouder-ark` | SteamCMD and ARK: Survival Evolved (about 15 GB) |
 
 ## How the images work
 
@@ -134,6 +138,67 @@ The server is downloaded from terraria.org into `/data/server/<version>` and `/d
 | `UPDATE_ON_START` | `1` | Update the game on every start |
 
 The variables above are written into `/data/Zomboid/Server/<SERVER_NAME>.ini` on every start; every other setting in the file is left as it is. The game reads its console from a pipe; `clouder-console <line>` writes a line to it, and a stop sends `quit`, which saves the world.
+## Counter-Strike 2, 7 Days to Die, Factorio and ARK
+
+These four share a console. Each image has a `console` script that types one line into the game's own console from inside the container (Source RCON for Counter-Strike 2, Factorio and ARK, telnet for 7 Days to Die) and prints the answer to the container's log. The agent runs it with `docker exec <container> console "<line>"`, so the console ports are never published. The panel generates `RCON_PASSWORD`, and the entrypoint refuses to start without it.
+
+Each game starts in the background and the entrypoint traps SIGTERM: it saves through the console, asks the game to quit, and exits 0, so both the agent's stop command and a plain `docker stop` end with a saved world.
+
+| Variable | Counter-Strike 2 | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, UDP; the RCON console listens on the same number over TCP, inside the container | `27015` |
+| `SERVER_NAME` | | `Counter-Strike 2 Server` |
+| `GAME_MODE` | `casual`, `competitive`, `wingman`, `armsrace`, `demolition` or `deathmatch` | `competitive` |
+| `MAP` | Starting map | `de_dust2` |
+| `MAX_PLAYERS` | | `10` |
+| `SERVER_PASSWORD` | Join password, empty for none | empty |
+| `STEAM_TOKEN` | Game server login token (app 730); without one the server is not listed publicly | empty |
+| `UPDATE_ON_START` | Update the game on every start | `1` |
+| `VALIDATE_ON_START` | Verify every game file during the update | `0` |
+
+Extra settings go in `server/game/csgo/cfg/server.cfg`, which runs on every map load.
+
+| Variable | 7 Days to Die | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, UDP and TCP | `26900` |
+| `SERVER_NAME`, `SERVER_DESCRIPTION`, `SERVER_PASSWORD` | | `7 Days to Die Server`, empty, empty |
+| `MAX_PLAYERS` | | `8` |
+| `GAME_WORLD` | `RWG` or `Navezgane` | `RWG` |
+| `WORLD_SEED`, `WORLD_SIZE`, `SAVE_NAME` | Seed and size (`6144`, `8192` or `10240`) of a generated `RWG` world, and the save name | `clouder`, `6144`, `Clouder` |
+| `VISIBILITY` | `listed`, `friends` or `unlisted` | `listed` |
+| `EAC_ENABLED` | Easy Anti-Cheat | `true` |
+| `STEAM_BRANCH` | | `public` |
+| `UPDATE_ON_START`, `VALIDATE_ON_START` | As above | `1`, `0` |
+
+The entrypoint copies the game's `serverconfig.xml` to `/data/serverconfig.xml` once and rewrites only the properties above on each start, so everything else in the file can be edited by hand. Saves are written to `/data/userdata`. Telnet listens on 8081 inside the container. Difficulty and the other gameplay rules are set in the sandbox settings of the game itself (`SandboxCode`) and can be edited in `/data/serverconfig.xml`.
+
+| Variable | Factorio | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, UDP | `34197` |
+| `FACTORIO_VERSION` | `stable`, `latest` or a version such as `2.0.77` | `stable` |
+| `SERVER_NAME`, `SERVER_DESCRIPTION`, `GAME_PASSWORD` | | `Factorio Server`, empty, empty |
+| `MAX_PLAYERS` | `0` for no limit | `0` |
+| `VISIBILITY` | `lan` or `public`; public needs the next two | `lan` |
+| `FACTORIO_USERNAME`, `FACTORIO_TOKEN` | factorio.com account for the public server list | empty |
+| `AUTOSAVE_INTERVAL` | Minutes | `10` |
+| `AUTO_PAUSE` | Pause when nobody is online | `true` |
+| `ALLOW_COMMANDS` | `admins-only`, `true` or `false` | `admins-only` |
+| `UPDATE_ON_START` | Check for a newer build of the chosen version on every start | `1` |
+
+The server is downloaded from factorio.com into `/data/server`; saves, mods and config live beside it in `/data/saves`, `/data/mods` and `/data/config`. A new map is created on first start. `server-settings.json` is the game's own example file with the variables above written into it on each start.
+
+| Variable | ARK: Survival Evolved | Default |
+| --- | --- | --- |
+| `SERVER_PORT` | Game port, UDP; the game also uses the next port up for raw sockets | `7777` |
+| `QUERY_PORT` | Steam query port, UDP | `27015` |
+| `SERVER_NAME` | | `ARK Server` |
+| `MAP` | `TheIsland`, `TheCenter`, `Ragnarok`, `ScorchedEarth_P` and so on | `TheIsland` |
+| `MAX_PLAYERS` | | `20` |
+| `SERVER_PASSWORD` | Join password, empty for none | empty |
+| `ADMIN_PASSWORD` | In-game admin password; empty falls back to `RCON_PASSWORD` | empty |
+| `STEAM_BRANCH`, `UPDATE_ON_START`, `VALIDATE_ON_START` | As above | `public`, `1`, `0` |
+
+Settings beyond these go in `server/ShooterGame/Saved/Config/LinuxServer/GameUserSettings.ini` and `Game.ini`. ARK: Survival Ascended is Windows-only and needs Proton, so it is not included.
 
 ## Stopping
 
