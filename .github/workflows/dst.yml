@@ -1,0 +1,29 @@
+name: dst
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dst/**"
+      - "test/dst.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/dst.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "dst/**"
+      - "test/dst.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/dst.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: dst
+      publish: ${{ github.event_name != 'pull_request' }}
