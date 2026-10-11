@@ -6,12 +6,16 @@ Container images that ClouderNode nodes run game servers in. They are public so 
 | --- | --- | --- |
 | `rust/` | `ghcr.io/joogiebear/clouder-rust` | SteamCMD and Rust (about 10 GB) |
 | `satisfactory/` | `ghcr.io/joogiebear/clouder-satisfactory` | SteamCMD and Satisfactory (about 3 GB) |
+| `valheim/` | `ghcr.io/joogiebear/clouder-valheim` | SteamCMD and Valheim (about 1 GB) |
+| `palworld/` | `ghcr.io/joogiebear/clouder-palworld` | SteamCMD and Palworld (about 5 GB) |
+| `terraria/` | `ghcr.io/joogiebear/clouder-terraria` | The Terraria server from terraria.org (about 45 MB) |
+| `projectzomboid/` | `ghcr.io/joogiebear/clouder-projectzomboid` | SteamCMD and Project Zomboid (about 7 GB) |
 
 ## How the images work
 
 The images hold only tools: SteamCMD's dependencies and tini. SteamCMD and the game are downloaded into the `/data` volume on first start and updated on later starts, so the images contain no Valve or Coffee Stain binaries and a game update never needs a new image.
 
-Both run as whatever uid the agent chooses, with `HOME=/data` as the only writable location. All configuration comes from environment variables set by the panel. Numeric values that are not numbers, and unsafe values for names and branches, fall back to their defaults.
+All run as whatever uid the agent chooses, with `HOME=/data` as the only writable location. All configuration comes from environment variables set by the panel. Numeric values that are not numbers, and unsafe values for names and branches, fall back to their defaults.
 
 ## Rust
 
@@ -57,9 +61,83 @@ Carbon loads plugins from `server/carbon/plugins` and Oxide from `server/oxide/p
 
 Saves are written to `/data/.config/Epic/FactoryGame/Saved/SaveGames`. The community image refuses to run as any uid but 1000, so this one starts the game binary itself.
 
+## Valheim
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SERVER_PORT` | `2456` | Game port, UDP. The query port is always this number plus one |
+| `SERVER_NAME` | `Valheim Server` | |
+| `WORLD_NAME` | `Dedicated` | A world is generated the first time a name is used |
+| `SERVER_PASSWORD` | empty | Empty, or at least 5 characters and not part of the server name |
+| `PUBLIC` | `false` | Show in the server list |
+| `CROSSPLAY` | `false` | |
+| `PRESET` | `normal` | `normal`, `casual`, `easy`, `hard`, `hardcore`, `immersive` or `hammer` |
+| `SAVE_INTERVAL` | `1800` | Seconds |
+| `BACKUPS` | `4` | Automatic backups kept |
+| `UPDATE_ON_START` | `1` | Update the game on every start |
+
+Worlds and the admin, ban and permitted lists are written to `/data/saves`. The game saves and exits on SIGINT.
+
+## Palworld
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SERVER_PORT` | `8211` | Game port, UDP |
+| `QUERY_PORT` | `27015` | Steam query port, UDP |
+| `SERVER_NAME` | `Palworld Server` | |
+| `SERVER_DESCRIPTION` | empty | |
+| `SERVER_PASSWORD` | empty | |
+| `ADMIN_PASSWORD` | empty | Empty turns admin commands off |
+| `MAX_PLAYERS` | `16` | |
+| `PVP` | `false` | |
+| `DEATH_PENALTY` | `All` | `None`, `Item`, `ItemAndEquipment` or `All` |
+| `EXP_RATE` | `1` | `0.5`, `1`, `2`, `3`, `5` or `10` |
+| `PUBLIC_LOBBY` | `false` | Show in the community server list |
+| `UPDATE_ON_START` | `1` | Update the game on every start |
+| `VALIDATE_ON_START` | `0` | Verify every game file during the update; adds minutes to each start |
+
+The options above are written into `PalWorldSettings.ini` on every start; every other option in that file is left as it is. The entrypoint prints `Palworld is ready` once the game port is bound, because the game itself logs nothing that says so. The game saves and exits on SIGTERM.
+
+## Terraria
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SERVER_PORT` | `7777` | TCP |
+| `WORLD_NAME` | `World` | A world is generated the first time a name is used |
+| `WORLD_SIZE` | `2` | `1` small, `2` medium or `3` large; new worlds only |
+| `DIFFICULTY` | `0` | `0` classic, `1` expert, `2` master or `3` journey; new worlds only |
+| `SEED` | empty | New worlds only |
+| `MAX_PLAYERS` | `8` | |
+| `SERVER_PASSWORD` | empty | |
+| `MOTD` | `Welcome!` | |
+| `TERRARIA_VERSION` | `1458` | The version without dots: 1458 is 1.4.5.8 |
+
+The server is downloaded from terraria.org into `/data/server/<version>` and `/data/serverconfig.txt` is written from the variables on every start. Worlds are in `/data/worlds`. The game reads its console from a pipe; `clouder-console <line>` writes a line to it, and a stop sends `exit`, which saves the world.
+
+## Project Zomboid
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SERVER_PORT` | `16261` | UDP |
+| `UDP_PORT` | `16262` | Direct connection port, UDP |
+| `STEAM_PORT1` | `8766` | UDP |
+| `STEAM_PORT2` | `8767` | UDP |
+| `SERVER_NAME` | `servertest` | Names the save and its settings file |
+| `PUBLIC_NAME` | `Project Zomboid Server` | Name in the server browser |
+| `PUBLIC` | `false` | Show in the server browser |
+| `SERVER_PASSWORD` | empty | |
+| `ADMIN_PASSWORD` | empty | Empty makes one up, prints it in the log and keeps it in `/data/.admin-password` |
+| `MAX_PLAYERS` | `16` | |
+| `PVP` | `true` | |
+| `XMX` | `4g` | Java heap, set by the panel from the server's memory |
+| `STEAM_BRANCH` | `public` | `public`, `unstable` or `legacy41` |
+| `UPDATE_ON_START` | `1` | Update the game on every start |
+
+The variables above are written into `/data/Zomboid/Server/<SERVER_NAME>.ini` on every start; every other setting in the file is left as it is. The game reads its console from a pipe; `clouder-console <line>` writes a line to it, and a stop sends `quit`, which saves the world.
+
 ## Stopping
 
-Rust is `exec`ed by its entrypoint, so the agent's RCON `quit`, or Docker's SIGTERM as the fallback, reaches the game directly. Satisfactory has no console. Its entrypoint turns SIGTERM into the interrupt the game saves and exits on, and a requested stop exits 0.
+Rust is `exec`ed by its entrypoint, so the agent's RCON `quit`, or Docker's SIGTERM as the fallback, reaches the game directly. Satisfactory has no console. Its entrypoint turns SIGTERM into the interrupt the game saves and exits on, and a requested stop exits 0. Valheim and Palworld work the same way and have no console either. Terraria and Project Zomboid read their console from a pipe, so their entrypoints turn SIGTERM into the game's own save-and-exit command.
 
 ## Publishing
 
