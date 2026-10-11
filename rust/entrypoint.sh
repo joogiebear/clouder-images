@@ -1,34 +1,40 @@
 #!/usr/bin/env bash
-# Installs or updates the Rust dedicated server with SteamCMD, then runs it.
-# Everything is configured through environment variables; the panel sets them.
 set -euo pipefail
 
-: "${SERVER_PORT:=28015}"
-: "${QUERY_PORT:=28017}"
-: "${RCON_PORT:=28016}"
-: "${APP_PORT:=28082}"
+num() { [[ "$1" =~ ^[0-9]+$ ]] && echo "$1" || echo "$2"; }
+word() { [[ "$1" =~ ^[A-Za-z0-9_-][A-Za-z0-9_.-]*$ ]] && echo "$1" || echo "$2"; }
+
+retry() {
+  local label=$1 attempt
+  shift
+  for attempt in 1 2 3; do
+    echo "[clouder] $label (attempt $attempt)"
+    "$@" && return 0
+    sleep 5
+  done
+  return 1
+}
+
 : "${RCON_PASSWORD:?RCON_PASSWORD must be set}"
-: "${IDENTITY:=clouder}"
+SERVER_PORT=$(num "${SERVER_PORT:-28015}" 28015)
+QUERY_PORT=$(num "${QUERY_PORT:-28017}" 28017)
+RCON_PORT=$(num "${RCON_PORT:-28016}" 28016)
+APP_PORT=$(num "${APP_PORT:-28082}" 28082)
+WORLD_SIZE=$(num "${WORLD_SIZE:-3000}" 3000)
+SEED=$(num "${SEED:-12345}" 12345)
+MAX_PLAYERS=$(num "${MAX_PLAYERS:-50}" 50)
+SAVE_INTERVAL=$(num "${SAVE_INTERVAL:-600}" 600)
+IDENTITY=$(word "${IDENTITY:-clouder}" clouder)
+STEAM_BRANCH=$(word "${STEAM_BRANCH:-public}" public)
+CARBON_BUILD=$(word "${CARBON_BUILD:-production_build}" production_build)
+OXIDE_BUILD=$(word "${OXIDE_BUILD:-latest}" latest)
 : "${SERVER_NAME:=Rust Server}"
 : "${SERVER_DESCRIPTION:=}"
 : "${SERVER_URL:=}"
 : "${LEVEL:=Procedural Map}"
-: "${WORLD_SIZE:=3000}"
-: "${SEED:=12345}"
-: "${MAX_PLAYERS:=50}"
-: "${SAVE_INTERVAL:=600}"
 : "${UPDATE_ON_START:=1}"
-: "${STEAM_BRANCH:=public}"
 : "${RUST_PLUS:=false}"
-# vanilla runs the game as Valve ships it. carbon adds the Carbon plugin framework
-# (https://github.com/CarbonCommunity/Carbon), which loads .cs plugins from server/carbon/plugins.
-# oxide adds the uMod Oxide framework (https://github.com/OxideMod/Oxide.Rust), which loads .cs
-# plugins from server/oxide/plugins.
 : "${FRAMEWORK:=vanilla}"
-# Carbon publishes one build per Rust branch; production_build matches the public branch.
-: "${CARBON_BUILD:=production_build}"
-# Oxide release tag, or "latest" for the newest release.
-: "${OXIDE_BUILD:=latest}"
 
 case "$FRAMEWORK" in
   vanilla|carbon|oxide) ;;
@@ -44,103 +50,73 @@ if [ ! -x steamcmd/steamcmd.sh ]; then
   curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C steamcmd
 fi
 
-install_game() {
-  # An optional first argument "validate" makes SteamCMD check every file and restore the ones
-  # that differ from Valve's copy.
-  local validate=()
-  [ "${1:-}" = "validate" ] && validate=(validate)
-  # SteamCMD fails now and then for network reasons, so retry a few times.
-  for attempt in 1 2 3; do
-    echo "[clouder] downloading or updating Rust (attempt $attempt)"
-    if steamcmd/steamcmd.sh +force_install_dir /data/server +login anonymous \
-        +app_update 258550 -beta "$STEAM_BRANCH" "${validate[@]}" +quit; then
-      return 0
-    fi
-    sleep 5
-  done
-  return 1
+steam_update() {
+  steamcmd/steamcmd.sh +force_install_dir /data/server +login anonymous \
+    +app_update 258550 -beta "$STEAM_BRANCH" "$@" +quit
 }
 
-# Oxide patches the game's own Assembly-CSharp.dll on disk, and a plain SteamCMD update does not
-# notice a file it did not change itself. So when a server leaves Oxide, the game is validated
-# once to put Valve's files back. /data/.framework remembers which framework the files are for.
-PREV_FRAMEWORK=$(cat /data/.framework 2>/dev/null || true)
-FORCE_VALIDATE=0
-if [ "$PREV_FRAMEWORK" = "oxide" ] && [ "$FRAMEWORK" != "oxide" ] && [ -x server/RustDedicated ]; then
-  echo "[clouder] leaving Oxide: validating the game files to restore the vanilla ones"
-  FORCE_VALIDATE=1
-fi
-
-if [ "$FORCE_VALIDATE" = "1" ]; then
-  install_game validate || { echo "[clouder] could not validate the Rust server" >&2; exit 1; }
-  # The Oxide libraries are not part of the game; remove them so nothing can load them.
-  rm -f server/RustDedicated_Data/Managed/Oxide.*
-elif [ ! -x server/RustDedicated ] || [ "$UPDATE_ON_START" = "1" ]; then
-  install_game || { echo "[clouder] could not download the Rust server" >&2; exit 1; }
-fi
-[ -x server/RustDedicated ] || { echo "[clouder] RustDedicated is missing after install" >&2; exit 1; }
-
-install_carbon() {
-  local url="https://github.com/CarbonCommunity/Carbon/releases/download/${CARBON_BUILD}/Carbon.Linux.Release.tar.gz"
+fetch_carbon() {
   local tmp
   tmp=$(mktemp /data/carbon-XXXXXX.tar.gz)
-  for attempt in 1 2 3; do
-    echo "[clouder] downloading Carbon (attempt $attempt)"
-    # Download to a file first, so a failed download never leaves half a framework behind.
-    if curl -fsSL -o "$tmp" "$url" && tar -tzf "$tmp" >/dev/null 2>&1; then
-      tar -xzf "$tmp" -C /data/server
-      rm -f "$tmp"
-      return 0
-    fi
-    sleep 5
-  done
+  if curl -fsSL -o "$tmp" "https://github.com/CarbonCommunity/Carbon/releases/download/${CARBON_BUILD}/Carbon.Linux.Release.tar.gz" \
+      && tar -tzf "$tmp" >/dev/null 2>&1 \
+      && tar -xzf "$tmp" -C /data/server; then
+    rm -f "$tmp"
+    return 0
+  fi
   rm -f "$tmp"
   return 1
 }
 
+fetch_oxide() {
+  local base="https://github.com/OxideMod/Oxide.Rust/releases" url tmp
+  if [ "$OXIDE_BUILD" = "latest" ]; then
+    url="$base/latest/download/Oxide.Rust-linux.zip"
+  else
+    url="$base/download/${OXIDE_BUILD}/Oxide.Rust-linux.zip"
+  fi
+  tmp=$(mktemp /data/oxide-XXXXXX.zip)
+  if curl -fsSL -o "$tmp" "$url" && unzip -tq "$tmp" >/dev/null 2>&1; then
+    # Recorded before the game files are overwritten, so an interrupted install is still known to be Oxide's.
+    echo oxide > /data/.framework
+    unzip -qo "$tmp" -d /data/server
+    rm -f "$tmp"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+# Oxide patches Assembly-CSharp.dll in place and SteamCMD does not notice files it did not write,
+# so leaving Oxide needs a validate to put Valve's file back.
+if [ "$(cat /data/.framework 2>/dev/null || true)" = "oxide" ] && [ "$FRAMEWORK" != "oxide" ] && [ -x server/RustDedicated ]; then
+  echo "[clouder] leaving Oxide: restoring the vanilla game files"
+  retry "validating Rust" steam_update validate || { echo "[clouder] could not validate the Rust server" >&2; exit 1; }
+  rm -f server/RustDedicated_Data/Managed/Oxide.*
+elif [ ! -x server/RustDedicated ] || [ "$UPDATE_ON_START" = "1" ]; then
+  retry "downloading or updating Rust" steam_update || { echo "[clouder] could not download the Rust server" >&2; exit 1; }
+fi
+[ -x server/RustDedicated ] || { echo "[clouder] RustDedicated is missing after install" >&2; exit 1; }
+
 if [ "$FRAMEWORK" = "carbon" ]; then
   if [ ! -f server/carbon/tools/environment.sh ] || [ "$UPDATE_ON_START" = "1" ]; then
-    if ! install_carbon; then
-      # An installed copy is better than none, but a server that never had Carbon cannot start with it.
+    if ! retry "downloading Carbon" fetch_carbon; then
       [ -f server/carbon/tools/environment.sh ] || { echo "[clouder] could not download Carbon" >&2; exit 1; }
       echo "[clouder] could not update Carbon; using the installed copy" >&2
     fi
   fi
 fi
 
-install_oxide() {
-  local base="https://github.com/OxideMod/Oxide.Rust/releases"
-  local url
-  if [ "$OXIDE_BUILD" = "latest" ]; then
-    url="$base/latest/download/Oxide.Rust-linux.zip"
-  else
-    url="$base/download/${OXIDE_BUILD}/Oxide.Rust-linux.zip"
-  fi
-  local tmp
-  tmp=$(mktemp /data/oxide-XXXXXX.zip)
-  for attempt in 1 2 3; do
-    echo "[clouder] downloading Oxide (attempt $attempt)"
-    # Download to a file first, so a failed download never leaves half a framework behind.
-    # The zip holds RustDedicated_Data/Managed/..., so it extracts straight over the server folder.
-    if curl -fsSL -o "$tmp" "$url" && unzip -tq "$tmp" >/dev/null 2>&1; then
-      # Record Oxide before touching the game files: if this is cut short, the next start
-      # still knows the files may be patched.
-      echo oxide > /data/.framework
-      unzip -qo "$tmp" -d /data/server
-      rm -f "$tmp"
-      return 0
-    fi
-    sleep 5
-  done
-  rm -f "$tmp"
-  return 1
-}
-
 if [ "$FRAMEWORK" = "oxide" ]; then
-  # Oxide.Core.dll is the marker of an installed Oxide. A game update restores Valve's
-  # Assembly-CSharp.dll, so Oxide is put back after every update, not only on first install.
+  # A game update restores Valve's Assembly-CSharp.dll, so Oxide is reinstalled after every update.
   if [ ! -f server/RustDedicated_Data/Managed/Oxide.Core.dll ] || [ "$UPDATE_ON_START" = "1" ]; then
-    if ! install_oxide; then
+    if retry "downloading Oxide" fetch_oxide; then
+      tag=$OXIDE_BUILD
+      if [ "$tag" = "latest" ]; then
+        tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/OxideMod/Oxide.Rust/releases/latest | sed 's|.*/||' || true)
+      fi
+      echo "[clouder] Oxide ${tag:-latest} installed"
+    else
       [ -f server/RustDedicated_Data/Managed/Oxide.Core.dll ] || { echo "[clouder] could not download Oxide" >&2; exit 1; }
       echo "[clouder] could not update Oxide; using the installed copy" >&2
     fi
@@ -148,12 +124,10 @@ if [ "$FRAMEWORK" = "oxide" ]; then
 fi
 echo "$FRAMEWORK" > /data/.framework
 
-# Rust+ makes the server test a connection to its own public address. Behind a router that
-# does not allow that, the game runtime aborts, so Rust+ is off unless explicitly enabled.
+# The game aborts at startup when Rust+ cannot reach its own public address, so it stays off unless enabled.
+app_port=-1
 if [ "$RUST_PLUS" = "true" ]; then
-  APP_ARG=("$APP_PORT")
-else
-  APP_ARG=(-1)
+  app_port=$APP_PORT
 fi
 
 cd server
@@ -169,10 +143,7 @@ if [ "$FRAMEWORK" = "oxide" ]; then
   echo "[clouder] Oxide is on"
 fi
 
-# The game's Epic Online Services library closes file descriptor 0, after which Mono hands
-# that number to the next file or socket it opens and aborts ("duplicate File fd 0"). Carbon and
-# Rust+ both trigger it. keepstdin.so makes close(0) do nothing; see keepstdin.c. If Docker
-# started the container with no stdin at all, give it /dev/null so descriptor 0 is taken.
+# See keepstdin.c. A container started without stdin gets /dev/null so descriptor 0 is still taken.
 [ -e /proc/self/fd/0 ] || exec 0</dev/null
 export LD_PRELOAD="/usr/local/lib/keepstdin.so${LD_PRELOAD:+:$LD_PRELOAD}"
 
@@ -182,7 +153,7 @@ exec ./RustDedicated -batchmode -nographics \
   +server.port "$SERVER_PORT" \
   +server.queryport "$QUERY_PORT" \
   +rcon.port "$RCON_PORT" +rcon.web 1 +rcon.password "$RCON_PASSWORD" \
-  +app.port "${APP_ARG[0]}" \
+  +app.port "$app_port" \
   +server.hostname "$SERVER_NAME" \
   +server.description "$SERVER_DESCRIPTION" \
   +server.url "$SERVER_URL" \
