@@ -1,0 +1,29 @@
+name: 7dtd
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "7dtd/**"
+      - "test/7dtd.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/7dtd.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "7dtd/**"
+      - "test/7dtd.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/7dtd.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: 7dtd
+      publish: ${{ github.event_name != 'pull_request' }}

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -u
+
+[ $# -ge 1 ] || { echo "usage: console <command>" >&2; exit 64; }
+: "${RCON_PASSWORD:?RCON_PASSWORD must be set}"
+
+exec 3<>"/dev/tcp/127.0.0.1/${TELNET_PORT:-8081}" 2>/dev/null \
+  || { echo "could not reach the game console (is the server fully started?)" >&2; exit 1; }
+
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+cat <&3 >"$out" &
+reader=$!
+sleep 1
+printf '%s\r\n' "$RCON_PASSWORD" >&3
+sleep 1
+printf '%s\r\n' "$*" >&3
+sleep 2
+printf 'exit\r\n' >&3
+sleep 1
+kill "$reader" 2>/dev/null || true
+
+text=$(tr -d '\r' <"$out" | tr -cd '\11\12\40-\176')
+if grep -qi "wrong password" <<<"$text"; then
+  echo "the game console refused the password" >&2
+  exit 2
+fi
+
+# The telnet session also streams the server's log, so keep only what follows the line that echoes the command.
+reply=$(awk -v marker="Executing command '$*'" '
+  found && $0 !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T/ && NF { print }
+  index($0, marker) { found = 1 }
+' <<<"$text")
+[ -z "$reply" ] || printf '%s\n' "$reply" | sed 's/^/[telnet] /' >/proc/1/fd/1
+exit 0
