@@ -31,7 +31,6 @@ $port = $1 if $ARGV[0] =~ /\?RCONPort=(\d+)/;
 $admin = $1 if $ARGV[0] =~ /\?ServerAdminPassword=([^?]*)/;
 my $srv = IO::Socket::INET->new(Listen => 5, LocalPort => $port, ReuseAddr => 1, Proto => 'tcp') or die "listen: $!";
 $| = 1;
-print "Server has completed startup and is now advertising for join.\n";
 my $saved = 0;
 sub pkt {
   my ($c, $id, $type, $body) = @_;
@@ -80,11 +79,11 @@ url=$(sed -n 1p "$work/args.txt")
 [[ "$url" == *"?ServerAdminPassword=boss?"* && "$url" == *"?ServerPassword=join" ]] || fail "passwords not passed through: $url"
 
 run -d --name "$name" -e RCON_PASSWORD=pw -e ADMIN_PASSWORD=boss "$image" >/dev/null
-for _ in $(seq 1 50); do
-  docker logs "$name" 2>&1 | grep -q "advertising for join" && break
+for _ in $(seq 1 100); do
+  docker logs "$name" 2>&1 | grep -q "accepting connections" && break
   sleep 0.2
 done
-docker logs "$name" 2>&1 | grep -q "advertising for join" || fail "the stubbed game never became ready"
+docker logs "$name" 2>&1 | grep -q "accepting connections" || fail "the stubbed game never became ready"
 
 docker exec "$name" console "listplayers" || fail "console command failed"
 docker logs "$name" 2>&1 | grep -qx "\[rcon\] echo:listplayers" || fail "console answer is not in the log"

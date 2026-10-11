@@ -70,6 +70,13 @@ export LD_LIBRARY_PATH="$PWD/linux64:${LD_LIBRARY_PATH:-}"
 echo "[clouder] starting ARK: Survival Evolved"
 ./ShooterGame/Binaries/Linux/ShooterGameServer "$url" -server -log -NoBattlEye &
 game=$!
+{
+  until RCON_PASSWORD=$ADMIN_PASSWORD rcon "$RCON_PORT" listplayers >/dev/null 2>&1; do
+    kill -0 "$game" 2>/dev/null || exit 0
+    sleep 5
+  done
+  echo "[clouder] ARK is accepting connections"
+} &
 stopping=0
 stop() {
   stopping=1
