@@ -1,0 +1,29 @@
+name: valheim
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "valheim/**"
+      - "test/valheim.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/valheim.yml"
+      - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "valheim/**"
+      - "test/valheim.sh"
+      - ".hadolint.yaml"
+      - ".github/workflows/valheim.yml"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: valheim
+      publish: ${{ github.event_name != 'pull_request' }}
