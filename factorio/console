@@ -1,0 +1,5 @@
+#!/bin/sh
+[ $# -ge 1 ] || { echo "usage: console <command>" >&2; exit 64; }
+out=$(rcon "${RCON_PORT:-27015}" "$*") || exit $?
+[ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/[rcon] /' >/proc/1/fd/1
+exit 0
